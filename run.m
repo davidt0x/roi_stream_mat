@@ -6,8 +6,8 @@ roiCircles = [
 ];
 
 % --- WINVIDEO (e.g., generic USB camera)
-vid = roi_stream('winvideo', 1, '', roiCircles);  % auto-picks device & format
-%vid = roi_stream('winvideo', 2, 'I420_1280x720', roiCircles);  % auto-picks device & format
+%vid = roi_stream('winvideo', 1, '', roiCircles);  % auto-picks device & format
+vid = roi_stream('winvideo', 2, 'I420_1280x720', roiCircles);  % auto-picks device & format
 
 
 % --- or HAMAMATSU (DCAM adaptor)
