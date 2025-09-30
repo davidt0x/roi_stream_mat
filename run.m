@@ -1,3 +1,4 @@
+%%
 % --- Define your circular ROIs (centers & radii in pixels, 1-based)
 roiCircles = [
     200 150 25   % ROI 1
@@ -5,7 +6,9 @@ roiCircles = [
 ];
 
 % --- WINVIDEO (e.g., generic USB camera)
-vid = roi_stream('winvideo', 2, 'I420_1280x720', roiCircles);  % auto-picks device & format
+vid = roi_stream('winvideo', 1, '', roiCircles);  % auto-picks device & format
+%vid = roi_stream('winvideo', 2, 'I420_1280x720', roiCircles);  % auto-picks device & format
+
 
 % --- or HAMAMATSU (DCAM adaptor)
 % vid = roi_stream('hamamatsu', [], '', roiCircles);
@@ -19,3 +22,7 @@ run_random_rois
 %%
 % Let it run, then stop:
 stop_roi_stream(vid);
+
+%%
+h5_traces_viewer('traces_20250912_131009.h5')
+
