@@ -27,6 +27,7 @@ vr = vid.VideoResolution; W = vr(1); H = vr(2);
 hFig = figure('Name','ROI Stream','NumberTitle','off','Color','w', ...
     'Units','normalized','Position',[0.20 0.02 0.60 0.95], ...
     'CloseRequestFcn', @onClose);
+hFig.WindowState = 'maximized';
 colormap(hFig, gray(256));  % keep preview rendering grayscale
 
 % Top status
