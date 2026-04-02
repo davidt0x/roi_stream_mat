@@ -72,6 +72,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         hist
         bcamfullFilename
         scan_start
+        roifullFilename
     end
     
 
@@ -196,6 +197,10 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             value = app.StartExperimentButton.Value;
             
             if value
+                pulse_times = [];
+                runFailed = false;
+                errMsg = '';
+                try
 
                 app.StartExperimentButton.Enable = "off";
 
@@ -263,6 +268,28 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 % Load calibration scipt and translated coordinate files
                 load(app.CalMtxFileEditField.Value);
                 load(app.TransCoordsFileEditField.Value, 'translated_coords');
+
+                stimStem = string(app.StimLogFilenameEditField.Value);
+                videoStem = string(app.VideoFilenameEditField.Value);
+                roiCircles = translated_coords(:, 1:3);
+                roiMeta = struct( ...
+                    'stim_log_path', string(fullfile(app.LoggingDirectoryEditField.Value, stimStem + ".mat")), ...
+                    'video_log_path', string(fullfile(app.LoggingDirectoryEditField.Value, videoStem + ".avi")), ...
+                    'trans_coords_file', string(app.TransCoordsFileEditField.Value), ...
+                    'calibration_file', string(app.CalMtxFileEditField.Value), ...
+                    'laser_intensities_file', string(app.LaserIntensitiesFileEditField.Value), ...
+                    'requested_frame_rate_hz', double(app.FrameRate), ...
+                    'baseline_sec', double(app.BaselinePeriodsEditField.Value), ...
+                    'post_stim_sec', double(app.PostStimPeriodsEditField.Value), ...
+                    'pulse_duration_ms', double(app.PulseDurationmsEditField.Value), ...
+                    'time_between_pulses_sec', double(app.TimebwPulsessEditField.Value), ...
+                    'num_pulses', double(app.NumberofPulsesEditField.Value));
+
+                app.roifullFilename = fullfile(app.LoggingDirectoryEditField.Value, stimStem + "_roi.h5");
+                roi_attach_to_video(app.v, roiCircles, struct( ...
+                    'H5Path', app.roifullFilename, ...
+                    'Meta', roiMeta, ...
+                    'PrintFPSPeriod', 2.0));
                 
 
                 % Load ROI laser intensity values
@@ -486,16 +513,10 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                         end
                     else
                         if any(markrs==1)
-                            
-                            % Log protocol
-                            n_scans_on = sum(prot(:, 2)); % number of scans that correspond to laser on in this protocol
-                            app.pulse_log{3} = [app.pulse_log{3} ; k_curr n_scans_on tss(end, 1)];
-
-
                             % Run stimulation
                             app.STIMONLabel.Visible = "on";
                             write(app.dqOut, app.outputs);
-                            app.STIMON.Visible = "off";
+                            app.STIMONLabel.Visible = "off";
 
                             % Reset history to be all ones
                             app.hist = ones(1, app.dqIn.Rate);
@@ -570,11 +591,10 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 pl = app.pulse_log;
                 save(app.posfullFilename, "pl");
 
-                
+                app.safeFinalizeROITrace(pulse_times);
 
-                delete(app.v)
-                delete(app.dqIn)
-                delete(app.dqOut)
+                
+                app.safeStopAndDeleteObjects();
 
                 app.NALabel_2.Enable = "off";
                 app.NALabel_2.Text = "N/A";
@@ -596,10 +616,106 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                     app.StartExperimentButton.Value = 0;
                 end
 
+                catch ME
+                    runFailed = true;
+                    errMsg = ME.message;
+                end
+
+                if runFailed
+                    app.safeFinalizeROITrace(pulse_times, struct( ...
+                        'run_failed', true, ...
+                        'error_message', char(errMsg)));
+                    app.safeStopAndDeleteObjects();
+                    app.STIMONLabel.Visible = "off";
+                    app.NALabel_2.Enable = "off";
+                    app.NALabel_2.Text = "N/A";
+                    app.StartingupLabel.Text = 'Idle';
+                    app.StartExperimentButton.Value = false;
+                    app.StartExperimentButton.Text = 'Start Experiment';
+                    app.StartExperimentButton.Enable = "on";
+                    errordlg(sprintf('Experiment aborted:\n%s', errMsg), 'Experiment Error');
+                end
 
             end
 
             
+        end
+
+        function safeFinalizeROITrace(app, pulse_times, extraSummary)
+            if nargin < 2
+                pulse_times = [];
+            end
+            if nargin < 3 || isempty(extraSummary)
+                extraSummary = struct();
+            end
+
+            if isempty(app.v)
+                return;
+            end
+            try
+                if isvalid(app.v)
+                    try
+                        stop(app.v);
+                    catch
+                    end
+
+                    roiSummary = extraSummary;
+                    if ~isempty(app.lsr) && isprop(app.lsr, 'time_start_vid') && ~isempty(app.lsr.time_start_vid)
+                        roiSummary.video_start_time = char(app.lsr.time_start_vid);
+                    end
+                    if ~isempty(app.scan_start)
+                        roiSummary.scan_start_time = char(app.scan_start);
+                    end
+                    if ~isempty(app.posfullFilename)
+                        roiSummary.stim_log_path = char(app.posfullFilename);
+                    end
+                    if ~isempty(app.bcamfullFilename)
+                        roiSummary.bcam_log_path = char(app.bcamfullFilename);
+                    end
+
+                    roi_finalize_from_video(app.v, roiSummary, pulse_times);
+                end
+            catch
+            end
+        end
+
+        function safeStopAndDeleteObjects(app)
+            if ~isempty(app.dqIn)
+                try
+                    stop(app.dqIn);
+                catch
+                end
+            end
+            if ~isempty(app.dqOut)
+                try
+                    stop(app.dqOut);
+                catch
+                end
+            end
+
+            if ~isempty(app.v)
+                try
+                    if isvalid(app.v)
+                        delete(app.v);
+                    end
+                catch
+                end
+                app.v = [];
+            end
+            if ~isempty(app.dqIn)
+                try
+                    delete(app.dqIn);
+                catch
+                end
+                app.dqIn = [];
+            end
+            if ~isempty(app.dqOut)
+                try
+                    delete(app.dqOut);
+                catch
+                end
+                app.dqOut = [];
+            end
         end
 
         % Value changed function: PulseDurationmsEditField
