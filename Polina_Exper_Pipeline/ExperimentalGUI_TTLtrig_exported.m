@@ -183,10 +183,30 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 errordlg('Stop the experiment before launching ROI preview.', 'Preview Unavailable');
                 return;
             end
+            if ~isempty(app.previewFig)
+                try
+                    if ishghandle(app.previewFig)
+                        figure(app.previewFig);
+                        app.StartingupLabel.Text = 'Preview already open';
+                        return;
+                    end
+                catch
+                end
+            end
+            if ~isempty(app.previewVid)
+                try
+                    if isvalid(app.previewVid)
+                        app.StartingupLabel.Text = 'Preview already open';
+                        return;
+                    end
+                catch
+                end
+            end
             if ~app.canLaunchPreview()
                 return;
             end
 
+            app.PreviewROIGUIButton.Enable = 'off';
             app.StartingupLabel.Text = 'Launching ROI preview...';
             drawnow
 
@@ -198,6 +218,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 app.StartingupLabel.Text = 'Idle';
                 errordlg(sprintf('ROI preview failed:\n%s', ME.message), 'Preview Error');
             end
+            app.PreviewROIGUIButton.Enable = 'on';
         end
 
         % Selection changed function: ROIStimOrderButtonGroup
@@ -834,16 +855,6 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 return;
             end
             app.TransCoordsFileEditField.Value = transCoordsDisplay;
-
-            if ~isempty(app.previewVid)
-                try
-                    if isvalid(app.previewVid)
-                        errordlg('ROI preview is already running.', 'Preview Already Running');
-                        return;
-                    end
-                catch
-                end
-            end
 
             tf = true;
         end
