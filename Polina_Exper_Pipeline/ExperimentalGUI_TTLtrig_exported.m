@@ -15,6 +15,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         PulseDurationmsEditField        matlab.ui.control.NumericEditField
         PulseDurationmsEditFieldLabel   matlab.ui.control.Label
         StartExperimentButton           matlab.ui.control.StateButton
+        PreviewROIGUIButton             matlab.ui.control.Button
         LaserIntensitiesFileEditField   matlab.ui.control.EditField
         LaserIntensitiesFileEditFieldLabel  matlab.ui.control.Label
         CalMtxFileEditField             matlab.ui.control.EditField
@@ -73,6 +74,8 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         bcamfullFilename
         scan_start
         roifullFilename
+        previewVid
+        previewFig
     end
     
 
@@ -110,8 +113,32 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             
             % Change label to idle
             app.StartingupLabel.Text = 'Idle';
+            app.previewVid = [];
+            app.previewFig = [];
 
 
+        end
+
+        function PreviewROIGUIButtonPushed(app, ~)
+            if app.StartExperimentButton.Value
+                errordlg('Stop the experiment before launching ROI preview.', 'Preview Unavailable');
+                return;
+            end
+            if ~app.canLaunchPreview()
+                return;
+            end
+
+            app.StartingupLabel.Text = 'Launching ROI preview...';
+            drawnow
+
+            try
+                app.startROIPreview();
+                app.StartingupLabel.Text = 'Idle';
+            catch ME
+                app.stopROIPreview();
+                app.StartingupLabel.Text = 'Idle';
+                errordlg(sprintf('ROI preview failed:\n%s', ME.message), 'Preview Error');
+            end
         end
 
         % Selection changed function: ROIStimOrderButtonGroup
@@ -198,6 +225,16 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             value = app.StartExperimentButton.Value;
             
             if value
+                if ~isempty(app.previewVid)
+                    try
+                        if isvalid(app.previewVid)
+                            app.StartExperimentButton.Value = false;
+                            errordlg('Close the ROI preview before starting the experiment.', 'Preview Active');
+                            return;
+                        end
+                    catch
+                    end
+                end
                 pulse_times = [];
                 runFailed = false;
                 errMsg = '';
@@ -719,6 +756,96 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             end
         end
 
+        function tf = canLaunchPreview(app)
+            tf = false;
+            if ~isfile(app.TransCoordsFileEditField.Value)
+                errordlg('Translated coordinates file is missing or invalid.', 'Preview Unavailable');
+                return;
+            end
+
+            if ~isempty(app.previewVid)
+                try
+                    if isvalid(app.previewVid)
+                        errordlg('ROI preview is already running.', 'Preview Already Running');
+                        return;
+                    end
+                catch
+                end
+            end
+
+            tf = true;
+        end
+
+        function startROIPreview(app)
+            data = load(app.TransCoordsFileEditField.Value, 'translated_coords');
+            if ~isfield(data, 'translated_coords') || size(data.translated_coords, 2) < 3
+                error('Translated coordinates file must contain translated_coords(:,1:3).');
+            end
+
+            roiCircles = data.translated_coords(:, 1:3);
+            app.previewVid = videoinput("hamamatsu", 1, "MONO16_BIN2x2_1152x1152_Fast");
+            app.previewVid.ROIPosition = [0 160 576 238] * 2;
+
+            srcPreview = getselectedsource(app.previewVid);
+            srcPreview.OutputTriggerKindOpt3 = "exposure";
+            srcPreview.OutputTriggerPolarityOpt3 = "positive";
+            srcPreview.ExposureTime = round(1 / app.FrameRate, 4);
+
+            app.previewVid.TriggerRepeat = 0;
+            app.previewVid.FramesPerTrigger = Inf;
+            triggerconfig(app.previewVid, 'immediate');
+            app.previewVid.LoggingMode = 'memory';
+
+            roi_attach_to_video(app.previewVid, roiCircles, struct( ...
+                'EnableLogging', false, ...
+                'PrintFPSPeriod', 2.0));
+
+            start(app.previewVid);
+            app.previewFig = roi_stream_gui(app.previewVid, struct('PlotWindowSec', 30, ...
+                'UpdatePeriod', 0.5, 'ImagePeriod', 0.25));
+            set(app.previewFig, 'CloseRequestFcn', @(src, evt)app.onPreviewFigureClose(src, evt));
+        end
+
+        function onPreviewFigureClose(app, src, ~)
+            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
+                app.previewFig = [];
+            end
+            if nargin >= 2 && ishghandle(src)
+                try
+                    set(src, 'CloseRequestFcn', '');
+                    delete(src);
+                catch
+                end
+            end
+            app.stopROIPreview();
+        end
+
+        function stopROIPreview(app)
+            if ~isempty(app.previewFig)
+                try
+                    if ishghandle(app.previewFig)
+                        delete(app.previewFig);
+                    end
+                catch
+                end
+                app.previewFig = [];
+            end
+
+            if ~isempty(app.previewVid)
+                try
+                    if isvalid(app.previewVid)
+                        try
+                            stop(app.previewVid);
+                        catch
+                        end
+                        delete(app.previewVid);
+                    end
+                catch
+                end
+                app.previewVid = [];
+            end
+        end
+
         % Value changed function: PulseDurationmsEditField
         function PulseDurationmsEditFieldValueChanged2(app, event)
             value = app.PulseDurationmsEditField.Value;
@@ -1149,6 +1276,12 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             app.StartExperimentButton.FontWeight = 'bold';
             app.StartExperimentButton.Position = [343 116 231 47];
 
+            % Create PreviewROIGUIButton
+            app.PreviewROIGUIButton = uibutton(app.UIFigure, 'push');
+            app.PreviewROIGUIButton.ButtonPushedFcn = createCallbackFcn(app, @PreviewROIGUIButtonPushed, true);
+            app.PreviewROIGUIButton.Text = 'Preview ROI GUI';
+            app.PreviewROIGUIButton.Position = [343 168 231 22];
+
             % Create PulseDurationmsEditFieldLabel
             app.PulseDurationmsEditFieldLabel = uilabel(app.UIFigure);
             app.PulseDurationmsEditFieldLabel.HorizontalAlignment = 'right';
@@ -1251,6 +1384,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
 
         % Code that executes before app deletion
         function delete(app)
+            stopROIPreview(app)
 
             % Delete UIFigure when app is deleted
             delete(app.UIFigure)

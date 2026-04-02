@@ -2,6 +2,7 @@
 %[text] Generated in MATLAB R2022b on 05-16-24 by Polina Cherepanova
 %[text] Follow this script in order when running an experiment. **Don't connect the patchcord to the animal until it says to in the script!**
 %%
+% Add path to roi_stream package (assumes roi_stream package is in same parent directory as this pipeline)
 this_dir = fileparts(mfilename('fullpath'));
 addpath(fullfile(fileparts(this_dir), 'roi_stream'));
 %%

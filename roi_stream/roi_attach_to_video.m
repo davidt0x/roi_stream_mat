@@ -6,6 +6,7 @@ function info = roi_attach_to_video(vid, roiCircles, opts)
 %   roiCircles: Nx3 [xc yc r] in image coordinates
 %   opts.H5Path: output HDF5 file path
 %   opts.Meta: struct of extra root attributes
+%   opts.EnableLogging: when false, skip HDF5 creation and run in preview mode
 
 if nargin < 3
     opts = struct();
@@ -16,6 +17,7 @@ opts = filldefaults(opts, struct( ...
     'PrintFPSPeriod', 1.0, ...
     'TraceBufferSec', 600, ...
     'ReturnColorSpace', 'grayscale', ...
+    'EnableLogging', true, ...
     'H5Path', '', ...
     'Meta', struct()));
 
@@ -72,25 +74,32 @@ S.trace_head = 0;
 S.trace_t = nan(cap, 1);
 S.trace_means = nan(cap, K, 'single');
 
-if isempty(opts.H5Path)
-    ts = string(datetime('now', 'TimeZone', 'local', 'Format', 'yyyyMMdd_HHmmss'));
-    opts.H5Path = fullfile(pwd, "traces_" + ts + ".h5");
-end
+S.h5w = [];
+S.roi_trace_path = '';
+S.loggingEnabled = logical(opts.EnableLogging);
 
-meta = collect_video_meta(vid, W, H);
-meta = merge_structs(meta, opts.Meta);
-if ~isfield(meta, 'start_iso8601') || isempty(meta.start_iso8601)
-    meta.start_iso8601 = char(datetime('now', 'TimeZone', 'local', 'Format', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ'));
-end
+if S.loggingEnabled
+    if isempty(opts.H5Path)
+        ts = string(datetime('now', 'TimeZone', 'local', 'Format', 'yyyyMMdd_HHmmss'));
+        opts.H5Path = fullfile(pwd, "traces_" + ts + ".h5");
+    end
 
-S.h5w = H5TracesWriter(opts.H5Path, roi.circles, meta, 240);
-S.roi_trace_path = char(S.h5w.path);
+    meta = collect_video_meta(vid, W, H);
+    meta = merge_structs(meta, opts.Meta);
+    if ~isfield(meta, 'start_iso8601') || isempty(meta.start_iso8601)
+        meta.start_iso8601 = char(datetime('now', 'TimeZone', 'local', 'Format', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ'));
+    end
+
+    S.h5w = H5TracesWriter(opts.H5Path, roi.circles, meta, 240);
+    S.roi_trace_path = char(S.h5w.path);
+end
 
 vid.UserData = S;
 vid.FramesAcquiredFcnCount = 1;
 vid.FramesAcquiredFcn = @roi_on_frame;
 
-info = struct('H5Path', char(S.h5w.path), 'NumROIs', K, 'Resolution', [W H]);
+info = struct('H5Path', S.roi_trace_path, 'NumROIs', K, 'Resolution', [W H], ...
+    'LoggingEnabled', S.loggingEnabled);
 end
 
 function d = filldefaults(d, defaults)

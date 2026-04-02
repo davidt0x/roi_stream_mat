@@ -13,7 +13,7 @@ means = roi_compute_means(f16, S.roi);
 
 t = toc(S.tic0);
 S.framesSeen = S.framesSeen + 1;
-S.frametimes(end+1) = t; %#ok<AGROW>
+S.frametimes(end+1) = t;
 if numel(S.frametimes) > S.maxFT
     S.frametimes = S.frametimes(end - S.maxFT + 1:end);
 end
@@ -45,7 +45,7 @@ S.pending_n = S.pending_n + 1;
 S.pending_t(S.pending_n) = t;
 S.pending_means(S.pending_n, :) = means;
 
-if S.pending_n >= S.framesPerChunk
+if S.loggingEnabled && S.pending_n >= S.framesPerChunk && ~isempty(S.h5w)
     S.h5w.append(S.pending_t(1:S.pending_n), S.pending_means(1:S.pending_n, :), []);
     S.pending_n = 0;
 end
