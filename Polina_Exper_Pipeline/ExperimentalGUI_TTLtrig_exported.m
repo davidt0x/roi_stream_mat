@@ -85,7 +85,8 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         % Code that executes after component creation
         function startupFcn(app)
             warning('off','all')
-            addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'roi_stream'));
+            appDir = fileparts(mfilename('fullpath'));
+            addpath(fullfile(fileparts(appDir), 'roi_stream'));
 
             % Set initial number of ROIs just for stim duration calculation, doesn't matter for actual experiment
             app.numROIs = 4;
@@ -115,8 +116,66 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             app.StartingupLabel.Text = 'Idle';
             app.previewVid = [];
             app.previewFig = [];
+            app.configureDefaultCalibrationFiles(appDir);
 
 
+        end
+
+        function configureDefaultCalibrationFiles(app, appDir)
+            app.TransCoordsFileEditField.Placeholder = 'TranslatedCoords_*.mat';
+            app.CalMtxFileEditField.Placeholder = 'cal_mtx_*.mat';
+            app.LaserIntensitiesFileEditField.Placeholder = 'lsr_ints_*.mat';
+
+            app.TransCoordsFileEditField.Value = app.pickLatestFile(appDir, 'TranslatedCoords_*.mat', app.TransCoordsFileEditField.Value);
+            app.CalMtxFileEditField.Value = app.pickLatestFile(appDir, 'cal_mtx_*.mat', app.CalMtxFileEditField.Value);
+            app.LaserIntensitiesFileEditField.Value = app.pickLatestFile(appDir, 'lsr_ints_*.mat', app.LaserIntensitiesFileEditField.Value);
+        end
+
+        function outPath = pickLatestFile(~, appDir, pattern, fallbackValue)
+            files = dir(fullfile(appDir, pattern));
+            files = files(~[files.isdir]);
+            if ~isempty(files)
+                [~, idx] = max([files.datenum]);
+                outPath = files(idx).name;
+                return;
+            end
+
+            fallbackPath = char(fallbackValue);
+            [~, nameOnly, extOnly] = fileparts(fallbackPath);
+            if ~isempty(nameOnly)
+                outPath = [nameOnly extOnly];
+            else
+                outPath = fallbackPath;
+            end
+        end
+
+        function [outPath, displayPath] = resolveFileInput(app, appDir, inputPath)
+            p = char(inputPath);
+            if isfile(p)
+                outPath = p;
+                displayPath = app.localDisplayPath(appDir, outPath);
+                return;
+            end
+
+            p2 = fullfile(appDir, p);
+            if isfile(p2)
+                outPath = p2;
+                displayPath = app.localDisplayPath(appDir, outPath);
+                return;
+            end
+
+            outPath = '';
+            displayPath = '';
+        end
+
+        function displayPath = localDisplayPath(~, appDir, absOrRelPath)
+            p = char(absOrRelPath);
+            prefix = [char(appDir) filesep];
+            if startsWith(p, prefix)
+                displayPath = p(numel(prefix) + 1:end);
+            else
+                displayPath = p;
+            end
         end
 
         function PreviewROIGUIButtonPushed(app, ~)
@@ -303,9 +362,19 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 app.dqIn.Rate = 2000;
                 app.dqOut.Rate = 2000;
 
-                % Load calibration scipt and translated coordinate files
-                load(app.CalMtxFileEditField.Value);
-                load(app.TransCoordsFileEditField.Value, 'translated_coords');
+                % Load calibration script and translated coordinate files
+                appDir = fileparts(mfilename('fullpath'));
+                [calPath, calDisplay] = app.resolveFileInput(appDir, app.CalMtxFileEditField.Value);
+                [coordsPath, coordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+                [intsPath, intsDisplay] = app.resolveFileInput(appDir, app.LaserIntensitiesFileEditField.Value);
+                if isempty(calPath) || isempty(coordsPath) || isempty(intsPath)
+                    error('One or more calibration files are missing or invalid.');
+                end
+                app.CalMtxFileEditField.Value = calDisplay;
+                app.TransCoordsFileEditField.Value = coordsDisplay;
+                app.LaserIntensitiesFileEditField.Value = intsDisplay;
+                load(calPath);
+                load(coordsPath, 'translated_coords');
 
                 stimStem = string(app.StimLogFilenameEditField.Value);
                 videoStem = string(app.VideoFilenameEditField.Value);
@@ -331,7 +400,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 
 
                 % Load ROI laser intensity values
-                load(app.LaserIntensitiesFileEditField.Value);
+                load(intsPath);
                 app.intensity_mat = intensity_mat;
 
                 % Find function to get galvo voltages from desired pixel location
@@ -758,10 +827,13 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
 
         function tf = canLaunchPreview(app)
             tf = false;
-            if ~isfile(app.TransCoordsFileEditField.Value)
+            appDir = fileparts(mfilename('fullpath'));
+            [transCoordsPath, transCoordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(transCoordsPath)
                 errordlg('Translated coordinates file is missing or invalid.', 'Preview Unavailable');
                 return;
             end
+            app.TransCoordsFileEditField.Value = transCoordsDisplay;
 
             if ~isempty(app.previewVid)
                 try
@@ -777,7 +849,13 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         end
 
         function startROIPreview(app)
-            data = load(app.TransCoordsFileEditField.Value, 'translated_coords');
+            appDir = fileparts(mfilename('fullpath'));
+            [transCoordsPath, transCoordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(transCoordsPath)
+                error('Translated coordinates file is missing or invalid.');
+            end
+            app.TransCoordsFileEditField.Value = transCoordsDisplay;
+            data = load(transCoordsPath, 'translated_coords');
             if ~isfield(data, 'translated_coords') || size(data.translated_coords, 2) < 3
                 error('Translated coordinates file must contain translated_coords(:,1:3).');
             end
@@ -912,26 +990,35 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
 
         % Value changed function: TransCoordsFileEditField
         function TransCoordsFileEditFieldValueChanged(app, event)
-            
-            if ~isfile(app.TransCoordsFileEditField.Value)
+            appDir = fileparts(mfilename('fullpath'));
+            [resolved, displayPath] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(resolved)
                 app.TransCoordsFileEditField.Value = "file does not exist!";
+            else
+                app.TransCoordsFileEditField.Value = displayPath;
             end
         end
 
         % Value changed function: CalMtxFileEditField
         function CalMtxFileEditFieldValueChanged(app, event)
-            
-            if ~isfile(app.CalMtxFileEditField.Value)
+            appDir = fileparts(mfilename('fullpath'));
+            [resolved, displayPath] = app.resolveFileInput(appDir, app.CalMtxFileEditField.Value);
+            if isempty(resolved)
                 app.CalMtxFileEditField.Value = "file does not exist!";
+            else
+                app.CalMtxFileEditField.Value = displayPath;
             end
             
         end
 
         % Value changed function: LaserIntensitiesFileEditField
         function LaserIntensitiesFileEditFieldValueChanged(app, event)
-            
-            if ~isfile(app.LaserIntensitiesFileEditField.Value)
+            appDir = fileparts(mfilename('fullpath'));
+            [resolved, displayPath] = app.resolveFileInput(appDir, app.LaserIntensitiesFileEditField.Value);
+            if isempty(resolved)
                 app.LaserIntensitiesFileEditField.Value = "file does not exist!";
+            else
+                app.LaserIntensitiesFileEditField.Value = displayPath;
             end
 
         end
