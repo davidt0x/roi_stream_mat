@@ -3,7 +3,17 @@ function roi_on_frame(obj, ~)
 
 S = obj.UserData;
 
-frame = getdata(obj, 1, 'native');
+try
+    frame = getdata(obj, 1, 'native');
+catch ME
+    % Can occur transiently when stopping/reconfiguring a stream or if
+    % no frame is currently available to read.
+    if contains(ME.message, 'no data is currently available', 'IgnoreCase', true) || ...
+       contains(ME.identifier, 'imaqdevice', 'IgnoreCase', true)
+        return;
+    end
+    rethrow(ME);
+end
 % If callback processing falls behind acquisition, unread frames accumulate
 % in the videoinput memory log and can eventually exhaust RAM. Drain any
 % backlog after taking one frame so memory stays bounded.

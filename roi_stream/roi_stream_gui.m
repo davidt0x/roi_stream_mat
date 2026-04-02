@@ -99,32 +99,41 @@ start(tm);
 
 % ---- Nested callbacks
     function onTick(~,~)
-        if ~ishandle(hFig) || ~isvalid(vid), safe_stop_timer(); return; end
-        S = get_user_state(vid);
-        if isempty(S), return; end
+        try
+            if ~ishandle(hFig) || ~isvalid(vid), safe_stop_timer(); return; end
+            if ~isgraphics(statusTxt), safe_stop_timer(); return; end
+            S = get_user_state(vid);
+            if isempty(S), return; end
 
-        % Update status
-        fps = NaN; ft = S.frametimes;
-        if numel(ft) >= 2, fps = (numel(ft)-1)/max(ft(end)-ft(1), eps); end
-        set(statusTxt, 'String', sprintf('frames=%d   dropped=%d   inst FPS=%.1f', ...
-            S.framesSeen, S.framesDropped, fps));
+            % Update status
+            fps = NaN; ft = S.frametimes;
+            if numel(ft) >= 2, fps = (numel(ft)-1)/max(ft(end)-ft(1), eps); end
+            set(statusTxt, 'String', sprintf('frames=%d   dropped=%d   inst FPS=%.1f', ...
+                S.framesSeen, S.framesDropped, fps));
 
-        % Update image at throttled cadence
-        G = getappdata(hFig,'roi_gui');
-        if (S.lastFrameTime - G.lastImgUpdate) >= opts.ImagePeriod && ~isempty(S.lastFrame)
-            set(G.imgHandle,'CData', S.lastFrame, 'CDataMapping','scaled');
-            G.lastImgUpdate = S.lastFrameTime;
+            % Update image at throttled cadence
+            G = getappdata(hFig,'roi_gui');
+            if (S.lastFrameTime - G.lastImgUpdate) >= opts.ImagePeriod && ~isempty(S.lastFrame) && isgraphics(G.imgHandle)
+                set(G.imgHandle,'CData', S.lastFrame, 'CDataMapping','scaled');
+                G.lastImgUpdate = S.lastFrameTime;
+            end
+
+            % Update traces at a slower cadence than status/image updates.
+            if (S.lastFrameTime - G.lastTraceUpdate) >= opts.TracePeriod
+                update_traces(axTr, S, opts, ln, startSlider, winEdit, roiList, autoScrollChk);
+                G.lastTraceUpdate = S.lastFrameTime;
+            end
+
+            setappdata(hFig,'roi_gui',G);
+
+            drawnow limitrate nocallbacks
+        catch ME
+            if contains(ME.message, 'Value must be a handle', 'IgnoreCase', true)
+                safe_stop_timer();
+                return;
+            end
+            rethrow(ME);
         end
-
-        % Update traces at a slower cadence than status/image updates.
-        if (S.lastFrameTime - G.lastTraceUpdate) >= opts.TracePeriod
-            update_traces(axTr, S, opts, ln, startSlider, winEdit, roiList, autoScrollChk);
-            G.lastTraceUpdate = S.lastFrameTime;
-        end
-
-        setappdata(hFig,'roi_gui',G);
-
-        drawnow limitrate nocallbacks
     end
 
     function onRoiSel(~,~)

@@ -76,6 +76,8 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         roifullFilename
         previewVid
         previewFig
+        experimentRunning = false
+        stopRequested = false
     end
     
 
@@ -303,7 +305,29 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         % Value changed function: StartExperimentButton
         function StartExperimentButtonValueChanged(app, event)
             value = app.StartExperimentButton.Value;
-            
+
+            if ~value
+                if app.experimentRunning
+                    app.stopRequested = true;
+                    app.StartingupLabel.Text = 'Stopping...';
+                    % Force-stop active hardware tasks immediately to
+                    % unblock any long/blocking DAQ/video calls.
+                    if ~isempty(app.dqOut)
+                        try, stop(app.dqOut); catch, end
+                    end
+                    if ~isempty(app.dqIn)
+                        try, stop(app.dqIn); catch, end
+                    end
+                    if ~isempty(app.v)
+                        try
+                            if isvalid(app.v), stop(app.v); end
+                        catch
+                        end
+                    end
+                end
+                return;
+            end
+
             if value
                 if ~isempty(app.previewVid)
                     try
@@ -319,6 +343,8 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 runFailed = false;
                 errMsg = '';
                 try
+                app.experimentRunning = true;
+                app.stopRequested = false;
 
                 app.StartExperimentButton.Enable = "off";
 
@@ -358,7 +384,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 fullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+".avi");
                
                 logfile = VideoWriter(fullFilename, "Grayscale AVI");
-                app.v.LoggingMode = "disk";
+                app.v.LoggingMode = "disk&memory";
                 app.v.DiskLogger = logfile;
 
                 app.posfullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.StimLogFilenameEditField.Value+".mat");
@@ -461,6 +487,24 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 % Upload galvo voltages to lsr
                 app.lsr.galvo_grid = [[1:size(galvo_coords, 1)].' galvo_coords]; % added indices in first column to keep track of permutations later
 
+                % Validate / normalize intensity map against ROI count.
+                if isempty(app.intensity_mat) || size(app.intensity_mat, 2) < 2
+                    error(['Laser intensities file must contain intensity_mat with at least ' ...
+                           '2 columns (ROI index/value).']);
+                end
+                requiredRows = size(app.lsr.grid, 1);
+                intensityRows = size(app.intensity_mat, 1);
+                if intensityRows == 1 && requiredRows > 1
+                    % Convenience mode: one intensity row means "use same
+                    % intensity for all ROIs".
+                    app.intensity_mat = repmat(app.intensity_mat, requiredRows, 1);
+                    fprintf('[experiment] intensity_mat had 1 row; replicated to %d ROI rows.\n', requiredRows);
+                elseif intensityRows < requiredRows
+                    error(['Laser intensities file has %d row(s), but translated coordinates ' ...
+                           'define %d ROI(s). Update %s or use a single-row intensity_mat.'], ...
+                           intensityRows, requiredRows, app.LaserIntensitiesFileEditField.Value);
+                end
+
 
                 % Make stim matrix to run at each TTL pulse
                 app.numROIs = size(app.lsr.grid,1); %number of fibers
@@ -525,6 +569,9 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                         if app.oneROIonlyButton.Value == true % if you only want to stimulate one region
 
                             r = cast(app.EditField_2.Value, "double");
+                            if r < 1 || r > app.numROIs
+                                error('Selected ROI index %d is out of bounds (valid: 1..%d).', r, app.numROIs);
+                            end
                             
 
                             % Get laser intensities
@@ -607,7 +654,12 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 firstStim = 1;
                 noStimCheck = 1;
                 while isRunning
+                    if app.stopRequested
+                        isRunning = 0;
+                        break;
+                    end
                     pause(0.2)
+                    drawnow limitrate
                     [input_logs, timestamps, trigtime] = read(app.dqIn, 'all', "OutputFormat", "Matrix");
 
                     if firstStim
@@ -641,6 +693,10 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                         end
                     else
                         if any(markrs==1)
+                            if app.stopRequested
+                                isRunning = 0;
+                                break;
+                            end
                             % Run stimulation
                             app.STIMONLabel.Visible = "on";
                             write(app.dqOut, app.outputs);
@@ -654,7 +710,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                         end
                     end
 
-                    if ~app.StartExperimentButton.Value
+                    if app.stopRequested || ~app.StartExperimentButton.Value
                         isRunning = 0;
                     end
                 end
@@ -695,8 +751,19 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 drawnow
 
                 
-                pulse_times = timestamps(app.bcam_log{7} > (min(app.intensity_mat(:, 2))*0.7), :);
-                pulse_times = pulse_times(1:(app.lsr.dutyCycle*app.dqOut.Rate):end);
+                % Use full-length logged vectors for pulse extraction.
+                % (Do not mix with the last `read(...)` chunk variables.)
+                all_timestamps = app.bcam_log{3};
+                stim_monitor = app.bcam_log{7};
+                n = min(numel(all_timestamps), numel(stim_monitor));
+                all_timestamps = all_timestamps(1:n);
+                stim_monitor = stim_monitor(1:n);
+
+                pulse_mask = stim_monitor > (min(app.intensity_mat(:, 2))*0.7);
+                pulse_times = all_timestamps(pulse_mask, :);
+
+                step = max(1, round(app.lsr.dutyCycle * app.dqOut.Rate));
+                pulse_times = pulse_times(1:step:end);
                 save("pulse_times.mat", 'pulse_times');
                 if app.repeatedstimsateachROIButton.Value == true
                     for n=1:app.numROIs
@@ -763,6 +830,9 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                     app.StartExperimentButton.Enable = "on";
                     errordlg(sprintf('Experiment aborted:\n%s', errMsg), 'Experiment Error');
                 end
+
+                app.experimentRunning = false;
+                app.stopRequested = false;
 
             end
 
