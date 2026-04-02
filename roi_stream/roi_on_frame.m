@@ -9,6 +9,28 @@ if ndims(frame) == 3
 end
 
 f16 = to_uint16_gray(frame);
+% Some devices/reporting paths (notably preview/cropped ROI streams) can
+% produce frames whose size differs from attach-time VideoResolution.
+% Rebuild indices from stored ROI circles when this happens, or when
+% precomputed indices are out of bounds for the incoming frame.
+[Hf, Wf] = size(f16);
+if ~isfield(S, 'roi') || ~isfield(S.roi, 'circles')
+    error('roi_stream:MissingROIState', 'ROI state missing from video UserData.');
+end
+
+frameShapeMismatch = ~isfield(S.roi, 'frame_size') || ~isequal(S.roi.frame_size, [Hf Wf]);
+frameIndexOverflow = false;
+if isfield(S.roi, 'max_idx')
+    frameIndexOverflow = double(S.roi.max_idx) > numel(f16);
+end
+
+if frameShapeMismatch || frameIndexOverflow
+    S.roi = roi_build_circle_indices(Hf, Wf, S.roi.circles);
+    if ~isfield(S, 'warnedFrameSizeAdjust') || ~S.warnedFrameSizeAdjust
+        fprintf('[roi_stream] Adjusted ROI indices for %dx%d frames.\n', Wf, Hf);
+        S.warnedFrameSizeAdjust = true;
+    end
+end
 means = roi_compute_means(f16, S.roi);
 
 t = toc(S.tic0);

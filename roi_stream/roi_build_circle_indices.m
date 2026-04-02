@@ -6,6 +6,8 @@ N = size(circles, 1);
 roi.idx = cell(N, 1);
 roi.npix = zeros(N, 1, 'uint32');
 roi.circles = circles;
+roi.frame_size = [H W];
+roi.max_idx = uint32(0);
 
 [xg, yg] = meshgrid(1:W, 1:H);
 for k = 1:N
@@ -16,5 +18,8 @@ for k = 1:N
     idx = find(mask);
     roi.idx{k} = idx;
     roi.npix(k) = uint32(numel(idx));
+    if ~isempty(idx)
+        roi.max_idx = max(roi.max_idx, uint32(max(idx)));
+    end
 end
 end
