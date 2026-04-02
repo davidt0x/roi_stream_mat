@@ -2,6 +2,9 @@
 %[text] Generated in MATLAB R2022b on 05-16-24 by Polina Cherepanova
 %[text] Follow this script in order when running an experiment. **Don't connect the patchcord to the animal until it says to in the script!**
 %%
+this_dir = fileparts(mfilename('fullpath'));
+addpath(fullfile(fileparts(this_dir), 'roi_stream'));
+%%
 %[text] ## **0. Turn Everything On**
 %[text] - **Camera:** switch on bottom left side of rig hardware
 %[text] - **Laser:** remote on top shelf of cart. **Flip** **power switch** to on, wait until status light turns blue, then **turn key** to "On"

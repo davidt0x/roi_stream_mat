@@ -82,6 +82,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         % Code that executes after component creation
         function startupFcn(app)
             warning('off','all')
+            addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'roi_stream'));
 
             % Set initial number of ROIs just for stim duration calculation, doesn't matter for actual experiment
             app.numROIs = 4;

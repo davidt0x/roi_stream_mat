@@ -4,6 +4,8 @@ function test_roi_core()
 %  2) uint8 RGB -> gray conversion with bright red blob in ROI 2
 %  3) two frames with the bright blob moving (ROI 2 -> ROI 1)
 
+ensure_roi_stream_path(fileparts(fileparts(mfilename('fullpath'))));
+
 H = 200; W = 300;
 roiCircles = [60 80 20; 220 140 25];  % [xc yc r]
 roi = roi_build_circle_indices(H, W, roiCircles);

@@ -21,7 +21,7 @@ This project provides a lightweight MATLAB pipeline for monitoring live camera f
 1. **Define ROIs and start streaming**
    - Edit `run.m` to match your adaptor, device ID, and video format.
    - Specify your circular ROIs as `[xc yc r]` rows in pixels.
-   - Run `run` from MATLAB. This calls `roi_stream`, launches the GUI, and begins logging frames.
+   - Run `run` from MATLAB. This bootstraps the `roi_stream/` library folder, calls `roi_stream`, launches the GUI, and begins logging frames.
 2. **Let it run**
    - The GUI updates once per second by default. Frame-rate and drop statistics print to the MATLAB console.
 3. **Stop the stream**
@@ -30,14 +30,16 @@ This project provides a lightweight MATLAB pipeline for monitoring live camera f
    - Run `h5_traces_viewer(trace_file_name)` to open the saved file. Use the listbox to toggle ROIs, adjust the time window, and export CSV snapshots.
 
 ## Useful Scripts & Functions
-- `roi_stream.m`: main acquisition loop; computes ROI means and writes to disk.
-- `stop_roi_stream.m`: halts acquisition and finalizes the HDF5 log.
-- `roi_stream_gui.m`: live plot and preview UI (launched automatically in demos).
-- `H5TracesWriter.m`: helper class that manages extendible HDF5 datasets.
-- `h5_traces_viewer.m`: offline viewer for trace files with optional dF/F visualization.
+- `roi_stream/roi_stream.m`: main acquisition loop; computes ROI means and writes to disk.
+- `roi_stream/stop_roi_stream.m`: halts acquisition and finalizes the HDF5 log.
+- `roi_stream/roi_stream_gui.m`: live plot and preview UI (launched automatically in demos).
+- `roi_stream/H5TracesWriter.m`: helper class that manages extendible HDF5 datasets.
+- `roi_stream/h5_traces_viewer.m`: offline viewer for trace files with optional dF/F visualization.
 - `run.m`: minimal example; define ROIs manually and stream from a chosen device.
 - `run_random_rois.m`: generates non-overlapping random ROIs for stress-testing.
-- `make_test_video.m`: utilities for producing synthetic clips (for example, circles for OBS playback).
+- `ensure_roi_stream_path.m`: adds the shared `roi_stream/` library folder to the MATLAB path for demos and tests.
+- `scripts/make_test_video.m`: utilities for producing synthetic clips (for example, circles for OBS playback).
+- `tests/test_roi_core.m` and `tests/test_roi_h5_writer.m`: hardware-free smoke tests for ROI math and HDF5 output.
 
 ## ROI and Device Tips
 - Use `imaqhwinfo` in MATLAB to inspect available adaptors, devices, and formats.

@@ -1,4 +1,6 @@
 %%
+ensure_roi_stream_path(fileparts(mfilename('fullpath')));
+
 % --- Define your circular ROIs (centers & radii in pixels, 1-based)
 roiCircles = [
     200 150 25   % ROI 1
@@ -26,4 +28,3 @@ trace_file_name = stop_roi_stream(vid);
 
 %%
 h5_traces_viewer(trace_file_name)
-

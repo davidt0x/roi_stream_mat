@@ -1,6 +1,8 @@
 function test_roi_h5_writer()
 %TEST_ROI_H5_WRITER Verify HDF5 trace output without camera or DAQ hardware.
 
+ensure_roi_stream_path(fileparts(fileparts(mfilename('fullpath'))));
+
 tmp = fullfile(tempdir, 'test_roi_writer.h5');
 if exist(tmp, 'file')
     delete(tmp);

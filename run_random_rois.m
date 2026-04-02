@@ -1,6 +1,8 @@
 %% run_random_rois.m
 % Stress-test the pipeline with many random circular ROIs.
 
+ensure_roi_stream_path(fileparts(mfilename('fullpath')));
+
 % ---- Config ----
 adaptor   = 'winvideo';
 deviceID  = 2;                      % your OBS virtual cam device index
