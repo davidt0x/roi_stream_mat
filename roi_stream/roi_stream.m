@@ -7,6 +7,8 @@ function vid = roi_stream(adaptor, deviceID, format, roiCircles, opts)
 %   format: format string ('' to auto-pick)
 %   roiCircles: Nx3 [xc, yc, r] (1-based pixels)
 %   opts.FramesPerChunk   (default 120)   % aggregation cadence (hook for file I/O)
+%   opts.CallbackBatchFrames (default 4)  % frames consumed per callback
+%   opts.StrictNoDrop     (default false) % do not flush callback backlog
 %   opts.PrintFPSPeriod   (default 1.0)   % seconds between FPS logs
 %   opts.ReturnColorSpace (default 'grayscale')
 %   opts.TraceBufferSec   (default 600)   % ~10 min ring buffer for GUI plot (60 Hz)
@@ -15,6 +17,8 @@ function vid = roi_stream(adaptor, deviceID, format, roiCircles, opts)
 
 if nargin < 5, opts = struct(); end
 opts = filldefaults(opts, struct('FramesPerChunk',120, ...
+                                 'CallbackBatchFrames',4, ...
+                                 'StrictNoDrop',false, ...
                                  'PrintFPSPeriod',1.0, ...
                                  'ReturnColorSpace','grayscale', ...
                                  'TraceBufferSec',600));

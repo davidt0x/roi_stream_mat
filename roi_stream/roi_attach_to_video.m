@@ -14,6 +14,8 @@ end
 
 opts = filldefaults(opts, struct( ...
     'FramesPerChunk', 120, ...
+    'CallbackBatchFrames', 4, ...
+    'StrictNoDrop', false, ...
     'PrintFPSPeriod', 1.0, ...
     'TraceBufferSec', 600, ...
     'ReturnColorSpace', 'grayscale', ...
@@ -60,6 +62,8 @@ S.frametimes = [];
 S.maxFT = max(2 * opts.FramesPerChunk, 300);
 
 S.framesPerChunk = opts.FramesPerChunk;
+S.callbackBatchFrames = max(1, round(double(opts.CallbackBatchFrames)));
+S.strictNoDrop = logical(opts.StrictNoDrop);
 S.pending_n = 0;
 S.pending_t = zeros(opts.FramesPerChunk, 1, 'double');
 S.pending_means = zeros(opts.FramesPerChunk, numel(roi.npix), 'single');
@@ -95,7 +99,7 @@ if S.loggingEnabled
 end
 
 vid.UserData = S;
-vid.FramesAcquiredFcnCount = 1;
+vid.FramesAcquiredFcnCount = S.callbackBatchFrames;
 vid.FramesAcquiredFcn = @roi_on_frame;
 
 info = struct('H5Path', S.roi_trace_path, 'NumROIs', K, 'Resolution', [W H], ...
