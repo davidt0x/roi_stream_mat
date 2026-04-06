@@ -28,8 +28,12 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
         FrameRate
         bcam_log
         bcamfullFilename
+        roifullFilename
+        scan_start
         previewVid
         previewFig
+        experimentRunning = false
+        stopRequested = false
         
     end
     
@@ -40,10 +44,14 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
         % Code that executes after component creation
         function startupFcn(app)
             warning('off','all')
+            appDir = fileparts(mfilename('fullpath'));
+            addpath(fullfile(fileparts(appDir), 'roi_stream'));
 
             % Change label to idle
             app.StartingupLabel.Text = 'Idle';
-
+            app.previewVid = [];
+            app.previewFig = [];
+            app.configureDefaultCalibrationFiles(appDir);
 
         end
 
@@ -53,6 +61,8 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
             
             if value
 
+                app.experimentRunning = true;
+                app.stopRequested = false;
 
                 app.StartExperimentButton.Enable = "off";
                 app.LoggingDirectoryEditField.Enable = "off";
@@ -106,12 +116,33 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 % Set up video recording
                 fullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+".avi");
                 logfile = VideoWriter(fullFilename, "Grayscale AVI");
-                app.v.LoggingMode = "disk";
+                app.v.LoggingMode = "disk&memory";
                 app.v.DiskLogger = logfile;
                 app.v.FramesPerTrigger = Inf;
 
                 % Set up bcam log
                 app.bcamfullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+"_bcam.mat");
+                app.roifullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+"_roi.h5");
+
+                appDir = fileparts(mfilename('fullpath'));
+                [coordsPath, coordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+                if isempty(coordsPath)
+                    error('Translated coordinates file is missing or invalid.');
+                end
+                app.TransCoordsFileEditField.Value = coordsDisplay;
+                data = load(coordsPath, 'translated_coords');
+                if ~isfield(data, 'translated_coords') || size(data.translated_coords, 2) < 3
+                    error('Translated coordinates file must contain translated_coords(:,1:3).');
+                end
+                roiCircles = data.translated_coords(:, 1:3);
+                roiMeta = struct( ...
+                    'video_log_path', string(fullFilename), ...
+                    'trans_coords_file', string(app.TransCoordsFileEditField.Value), ...
+                    'requested_frame_rate_hz', double(app.FrameRate));
+                roi_attach_to_video(app.v, roiCircles, struct( ...
+                    'H5Path', app.roifullFilename, ...
+                    'Meta', roiMeta, ...
+                    'PrintFPSPeriod', 2.0));
 
                 % Read in bcam log inputs continuously
                 start(app.dqIn, "Continuous")
@@ -130,6 +161,7 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
 
 
             else
+                app.stopRequested = true;
                 
                 % Stop recording
                 app.StartingupLabel.Text = 'Saving video...';
@@ -142,6 +174,7 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 [input_logs, timestamps, trigtime] = read(app.dqIn, 'all', "OutputFormat", "Matrix");
 
                 scan_start = datetime(trigtime,'ConvertFrom','datenum','Format','HH:mm:ss.SSSSSSSSS');
+                app.scan_start = scan_start;
                 
                 
                 % Same frame time stamp log
@@ -166,11 +199,8 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 bcl = app.bcam_log;
                 save(app.bcamfullFilename, "bcl");
 
-                
-
-                % Delete acquisition objects
-                delete(app.v)
-                delete(app.dqIn)
+                app.safeFinalizeROITrace([], struct('run_failed', false));
+                app.safeStopAndDeleteObjects();
 
                 % Change label to idle
                 app.StartingupLabel.Text = 'Idle';
@@ -182,6 +212,8 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 app.StartExperimentButton.Enable = "on";
                 app.LoggingDirectoryEditField.Enable = "on";
                 app.VideoFilenameEditField.Enable = "on";
+                app.experimentRunning = false;
+                app.stopRequested = false;
 
             end
 
@@ -195,6 +227,71 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 app.LoggingDirectoryEditField.Value = "directory does not exist!";
             end
             
+        end
+
+        function safeFinalizeROITrace(app, pulse_times, extraSummary)
+            if nargin < 2
+                pulse_times = [];
+            end
+            if nargin < 3 || isempty(extraSummary)
+                extraSummary = struct();
+            end
+
+            if isempty(app.v)
+                return;
+            end
+            try
+                if isvalid(app.v)
+                    roiSummary = extraSummary;
+                    if ~isempty(app.lsr) && isprop(app.lsr, 'time_start_vid') && ~isempty(app.lsr.time_start_vid)
+                        roiSummary.video_start_time = char(app.lsr.time_start_vid);
+                    end
+                    if ~isempty(app.scan_start)
+                        roiSummary.scan_start_time = char(app.scan_start);
+                    end
+                    if ~isempty(app.bcamfullFilename)
+                        roiSummary.bcam_log_path = char(app.bcamfullFilename);
+                    end
+                    roi_finalize_from_video(app.v, roiSummary, pulse_times);
+                end
+            catch
+            end
+        end
+
+        function safeStopAndDeleteObjects(app)
+            if ~isempty(app.dqIn)
+                try
+                    stop(app.dqIn);
+                catch
+                end
+            end
+
+            if ~isempty(app.v)
+                try
+                    if isvalid(app.v)
+                        stop(app.v);
+                    end
+                catch
+                end
+            end
+
+            if ~isempty(app.v)
+                try
+                    if isvalid(app.v)
+                        delete(app.v);
+                    end
+                catch
+                end
+                app.v = [];
+            end
+
+            if ~isempty(app.dqIn)
+                try
+                    delete(app.dqIn);
+                catch
+                end
+                app.dqIn = [];
+            end
         end
     end
 
@@ -465,15 +562,26 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
         end
 
         function onPreviewFigureClose(app, src, ~)
-            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
-                app.previewFig = [];
-            end
             if nargin >= 2 && ishghandle(src)
                 try
                     set(src, 'CloseRequestFcn', '');
+                catch
+                end
+                try
+                    tmr = getappdata(src, 'roi_gui_timer');
+                    if isa(tmr, 'timer') && isvalid(tmr)
+                        stop(tmr);
+                        delete(tmr);
+                    end
+                catch
+                end
+                try
                     delete(src);
                 catch
                 end
+            end
+            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
+                app.previewFig = [];
             end
             app.stopROIPreview();
         end
@@ -482,6 +590,14 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
             if ~isempty(app.previewFig)
                 try
                     if ishghandle(app.previewFig)
+                        try
+                            tmr = getappdata(app.previewFig, 'roi_gui_timer');
+                            if isa(tmr, 'timer') && isvalid(tmr)
+                                stop(tmr);
+                                delete(tmr);
+                            end
+                        catch
+                        end
                         delete(app.previewFig);
                     end
                 catch

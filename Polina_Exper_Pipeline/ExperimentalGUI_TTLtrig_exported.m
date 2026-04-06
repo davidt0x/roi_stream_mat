@@ -966,15 +966,26 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
         end
 
         function onPreviewFigureClose(app, src, ~)
-            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
-                app.previewFig = [];
-            end
             if nargin >= 2 && ishghandle(src)
                 try
                     set(src, 'CloseRequestFcn', '');
+                catch
+                end
+                try
+                    tmr = getappdata(src, 'roi_gui_timer');
+                    if isa(tmr, 'timer') && isvalid(tmr)
+                        stop(tmr);
+                        delete(tmr);
+                    end
+                catch
+                end
+                try
                     delete(src);
                 catch
                 end
+            end
+            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
+                app.previewFig = [];
             end
             app.stopROIPreview();
         end
@@ -983,6 +994,14 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
             if ~isempty(app.previewFig)
                 try
                     if ishghandle(app.previewFig)
+                        try
+                            tmr = getappdata(app.previewFig, 'roi_gui_timer');
+                            if isa(tmr, 'timer') && isvalid(tmr)
+                                stop(tmr);
+                                delete(tmr);
+                            end
+                        catch
+                        end
                         delete(app.previewFig);
                     end
                 catch
