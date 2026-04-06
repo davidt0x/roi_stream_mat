@@ -361,6 +361,17 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 app.stopRequested = false;
 
                 app.StartExperimentButton.Enable = "off";
+                logDir = char(string(app.LoggingDirectoryEditField.Value));
+                if isempty(strtrim(logDir))
+                    error('Logging directory is empty.');
+                end
+                if ~isfolder(logDir)
+                    [ok, msg] = mkdir(logDir);
+                    if ~ok
+                        error('Could not create logging directory: %s', msg);
+                    end
+                end
+                app.LoggingDirectoryEditField.Value = string(logDir);
 
                 % Get everything ready according to set protocol values
                 app.StartingupLabel.Text = 'Preparing for recording...';
@@ -395,14 +406,14 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
 
 
                 % Get video and laser logging ready
-                fullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+".avi");
+                fullFilename = fullfile(logDir, app.VideoFilenameEditField.Value+".avi");
                
                 logfile = VideoWriter(fullFilename, "Grayscale AVI");
                 app.v.LoggingMode = "disk&memory";
                 app.v.DiskLogger = logfile;
 
-                app.posfullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.StimLogFilenameEditField.Value+".mat");
-                app.bcamfullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.StimLogFilenameEditField.Value+"_bcam.mat");
+                app.posfullFilename = fullfile(logDir, app.StimLogFilenameEditField.Value+".mat");
+                app.bcamfullFilename = fullfile(logDir, app.StimLogFilenameEditField.Value+"_bcam.mat");
 
                 app.bcam_log_3 = [];
                 app.bcam_log_4 = [];
@@ -441,8 +452,8 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 videoStem = string(app.VideoFilenameEditField.Value);
                 roiCircles = translated_coords(:, 1:3);
                 roiMeta = struct( ...
-                    'stim_log_path', string(fullfile(app.LoggingDirectoryEditField.Value, stimStem + ".mat")), ...
-                    'video_log_path', string(fullfile(app.LoggingDirectoryEditField.Value, videoStem + ".avi")), ...
+                    'stim_log_path', string(fullfile(logDir, stimStem + ".mat")), ...
+                    'video_log_path', string(fullfile(logDir, videoStem + ".avi")), ...
                     'trans_coords_file', string(app.TransCoordsFileEditField.Value), ...
                     'calibration_file', string(app.CalMtxFileEditField.Value), ...
                     'laser_intensities_file', string(app.LaserIntensitiesFileEditField.Value), ...
@@ -453,7 +464,7 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                     'time_between_pulses_sec', double(app.TimebwPulsessEditField.Value), ...
                     'num_pulses', double(app.NumberofPulsesEditField.Value));
 
-                app.roifullFilename = fullfile(app.LoggingDirectoryEditField.Value, stimStem + "_roi.h5");
+                app.roifullFilename = fullfile(logDir, stimStem + "_roi.h5");
                 roi_attach_to_video(app.v, roiCircles, struct( ...
                     'H5Path', app.roifullFilename, ...
                     'Meta', roiMeta, ...
@@ -1139,10 +1150,18 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
 
         % Value changed function: LoggingDirectoryEditField
         function LoggingDirectoryEditFieldValueChanged(app, event)
-            
-            if ~isfolder(app.LoggingDirectoryEditField.Value)
-                app.LoggingDirectoryEditField.Value = "directory does not exist!";
+            logDir = char(string(app.LoggingDirectoryEditField.Value));
+            if isempty(strtrim(logDir))
+                return;
             end
+            if ~isfolder(logDir)
+                [ok, msg] = mkdir(logDir);
+                if ~ok
+                    errordlg(sprintf('Could not create logging directory:\n%s', msg), 'Directory Error');
+                    return;
+                end
+            end
+            app.LoggingDirectoryEditField.Value = string(logDir);
             
         end
 

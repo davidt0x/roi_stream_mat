@@ -68,6 +68,18 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 app.LoggingDirectoryEditField.Enable = "off";
                 app.VideoFilenameEditField.Enable = "off";
 
+                logDir = char(string(app.LoggingDirectoryEditField.Value));
+                if isempty(strtrim(logDir))
+                    error('Logging directory is empty.');
+                end
+                if ~isfolder(logDir)
+                    [ok, msg] = mkdir(logDir);
+                    if ~ok
+                        error('Could not create logging directory: %s', msg);
+                    end
+                end
+                app.LoggingDirectoryEditField.Value = string(logDir);
+
                 % Get everything ready according to set protocol values
                 app.StartingupLabel.Text = 'Preparing for recording...';
 
@@ -121,15 +133,15 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
 
 
                 % Set up video recording
-                fullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+".avi");
+                fullFilename = fullfile(logDir, app.VideoFilenameEditField.Value+".avi");
                 logfile = VideoWriter(fullFilename, "Grayscale AVI");
                 app.v.LoggingMode = "disk&memory";
                 app.v.DiskLogger = logfile;
                 app.v.FramesPerTrigger = Inf;
 
                 % Set up bcam log
-                app.bcamfullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+"_bcam.mat");
-                app.roifullFilename = fullfile(app.LoggingDirectoryEditField.Value, app.VideoFilenameEditField.Value+"_roi.h5");
+                app.bcamfullFilename = fullfile(logDir, app.VideoFilenameEditField.Value+"_bcam.mat");
+                app.roifullFilename = fullfile(logDir, app.VideoFilenameEditField.Value+"_roi.h5");
 
                 appDir = fileparts(mfilename('fullpath'));
                 [coordsPath, coordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
@@ -229,10 +241,18 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
 
         % Value changed function: LoggingDirectoryEditField
         function LoggingDirectoryEditFieldValueChanged(app, event)
-            
-            if ~isfolder(app.LoggingDirectoryEditField.Value)
-                app.LoggingDirectoryEditField.Value = "directory does not exist!";
+            logDir = char(string(app.LoggingDirectoryEditField.Value));
+            if isempty(strtrim(logDir))
+                return;
             end
+            if ~isfolder(logDir)
+                [ok, msg] = mkdir(logDir);
+                if ~ok
+                    errordlg(sprintf('Could not create logging directory:\n%s', msg), 'Directory Error');
+                    return;
+                end
+            end
+            app.LoggingDirectoryEditField.Value = string(logDir);
             
         end
 
