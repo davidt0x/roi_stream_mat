@@ -13,6 +13,9 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
         LoggingDirectoryEditField       matlab.ui.control.EditField
         LoggingDirectoryEditFieldLabel  matlab.ui.control.Label
         LoggingControlsLabel            matlab.ui.control.Label
+        PreviewROIGUIButton             matlab.ui.control.Button
+        TransCoordsFileEditField        matlab.ui.control.EditField
+        TransCoordsFileEditFieldLabel   matlab.ui.control.Label
     end
 
     
@@ -25,6 +28,8 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
         FrameRate
         bcam_log
         bcamfullFilename
+        previewVid
+        previewFig
         
     end
     
@@ -56,12 +61,21 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 % Get everything ready according to set protocol values
                 app.StartingupLabel.Text = 'Preparing for recording...';
 
-                app.numROIs = 12;
+                app.numROIs = 6;
 
                 app.FrameRate = 80; % Hz
-
-
-
+                
+                % Clear recording variables if they already exist
+                if exist(app.v, 'var')
+                    delete(app.v)
+                end
+                if exist(app.dqIn, 'var')
+                    delete(app.dqIn)
+                end
+                if exist(app.dqIn, 'var')
+                    delete(app.dqOut)
+                end
+                
                 % Connect to camera
                 app.v = videoinput("hamamatsu", 1, "MONO16_BIN2x2_1152x1152_Fast");
                 app.v.ROIPosition = [0 160 576 238]*2;
@@ -78,11 +92,13 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 % Set up DAQ
                 app.dqIn = daq("ni");
                 
-                addinput(app.dqIn, "Dev1", "ai29", "Voltage"); % input channel receiving photometry cam frame voltages
-                addinput(app.dqIn, "Dev1", "ai2", "Voltage"); % input channel receiving behavior cam frame voltages
-                addinput(app.dqIn, "Dev1", "ai27", "Voltage"); % input channel receiving voltage random LED in rig 
-                app.dqIn.Rate = 2000;
+                addinput(app.dqIn, "Dev1", "ai0", "Voltage"); % Rig 1 TTL pulses for syncing 
+                addinput(app.dqIn, "Dev1", "ai2", "Voltage"); % Rig 2 TTL pulses for syncing
+                addinput(app.dqIn, "Dev1", "ai4", "Voltage"); % 488 LED firing voltage pulse
+                addinput(app.dqIn, "Dev1", "ai6", "Voltage"); % 420 LED firing voltage pulse
+                addinput(app.dqIn, "Dev1", "ai7", "Voltage"); % camera voltage pulse -- should be frame perfect match of .avi frames
 
+                app.dqIn.Rate = 2000;
 
                 app.lsr = lsrCtrlParams; % get class object with laser parameters
 
@@ -131,11 +147,19 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 % Same frame time stamp log
                 app.StartingupLabel.Text = 'Saving behavior cam log...';
                 drawnow
+                
+                % addinput(app.dqIn, "Dev1", "ai0", "Voltage"); % Rig 1 TTL pulses for syncing 
+                % addinput(app.dqIn, "Dev1", "ai2", "Voltage"); % Rig 2 TTL pulses for syncing
+                % addinput(app.dqIn, "Dev1", "ai4", "Voltage"); % 488 LED firing voltage pulse
+                % addinput(app.dqIn, "Dev1", "ai6", "Voltage"); % 420 LED firing voltage pulse
+                % addinput(app.dqIn, "Dev1", "ai7", "Voltage"); % camera voltage pulse -- should be frame perfect match of .avi frames
 
                 app.bcam_log{3} = timestamps; % DAQinput time stamps
-                app.bcam_log{4} = input_logs(:, 1); % photometry cam frame voltage trace
-                app.bcam_log{5} = input_logs(:, 2); % behavior cam frame voltage trace
-                app.bcam_log{6} = input_logs(:, 3); % rig random LED voltage trace
+                app.bcam_log{4} = input_logs(:, 1); % Rig 1 TTL pulses for syncing 
+                app.bcam_log{5} = input_logs(:, 2); % Rig 2 TTL pulses for syncing
+                app.bcam_log{6} = input_logs(:, 3); % 488 LED firing voltage pulse
+                app.bcam_log{7} = input_logs(:, 4); % 420 LED firing voltage pulse
+                app.bcam_log{8} = input_logs(:, 5); % camera voltage pulse
 
                 app.bcam_log{1} = app.lsr.time_start_vid; % computer time of video start
                 app.bcam_log{2} = scan_start; % DAQ time of scan start
@@ -209,11 +233,18 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
             app.LoggingDirectoryEditField.Position = [154 178 285 22];
             app.LoggingDirectoryEditField.Value = 'Z:\Vanessa\new_FP_Polina';
 
+            % Create PreviewROIGUIButton
+            app.PreviewROIGUIButton = uibutton(app.UIFigure, 'push');
+            app.PreviewROIGUIButton.HorizontalAlignment = 'right';
+            app.PreviewROIGUIButton.ButtonPushedFcn = createCallbackFcn(app, @PreviewROIGUIButtonPushed, true);
+            app.PreviewROIGUIButton.Text = 'Preview ROI GUI';
+            app.PreviewROIGUIButton.Position = [143 120 285 22];
+
             % Create VideoFilenameEditFieldLabel
             app.VideoFilenameEditFieldLabel = uilabel(app.UIFigure);
             app.VideoFilenameEditFieldLabel.HorizontalAlignment = 'right';
             app.VideoFilenameEditFieldLabel.FontColor = [0.129411764705882 0.129411764705882 0.129411764705882];
-            app.VideoFilenameEditFieldLabel.Position = [15 146 87 22];
+            app.VideoFilenameEditFieldLabel.Position = [154,146,285,22];
             app.VideoFilenameEditFieldLabel.Text = 'Video Filename';
 
             % Create VideoFilenameEditField
@@ -262,6 +293,21 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
             app.StartExperimentButton.FontColor = [0.129411764705882 0.129411764705882 0.129411764705882];
             app.StartExperimentButton.Position = [129 71 231 47];
 
+            % Create TransCoordsFileEditFieldLabel
+            app.TransCoordsFileEditFieldLabel = uilabel(app.UIFigure);
+            app.TransCoordsFileEditFieldLabel.HorizontalAlignment = 'right';
+            app.TransCoordsFileEditFieldLabel.Position = [280 256 102 22];
+            app.TransCoordsFileEditFieldLabel.Text = 'Trans. Coords File';
+
+            % Create TransCoordsFileEditField
+            app.TransCoordsFileEditField = uieditfield(app.UIFigure, 'text');
+            app.TransCoordsFileEditField.CharacterLimits = [5 Inf];
+            app.TransCoordsFileEditField.ValueChangedFcn = createCallbackFcn(app, @TransCoordsFileEditFieldValueChanged, true);
+            app.TransCoordsFileEditField.Placeholder = 'TranslatedCoords_020426.mat';
+            app.TransCoordsFileEditField.Position = [420 256 212 22];
+            app.TransCoordsFileEditField.Value = 'TranslatedCoords_020426.mat';
+
+
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
         end
@@ -286,6 +332,208 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 clear app
             end
         end
+
+        function outPath = pickLatestFile(~, appDir, pattern, fallbackValue)
+            files = dir(fullfile(appDir, pattern));
+            files = files(~[files.isdir]);
+            if ~isempty(files)
+                [~, idx] = max([files.datenum]);
+                outPath = files(idx).name;
+                return;
+            end
+
+            fallbackPath = char(fallbackValue);
+            [~, nameOnly, extOnly] = fileparts(fallbackPath);
+            if ~isempty(nameOnly)
+                outPath = [nameOnly extOnly];
+            else
+                outPath = fallbackPath;
+            end
+        end
+        
+        function configureDefaultCalibrationFiles(app, appDir)
+            app.TransCoordsFileEditField.Placeholder = 'TranslatedCoords_*.mat';
+            %app.CalMtxFileEditField.Placeholder = 'cal_mtx_*.mat';
+            %app.LaserIntensitiesFileEditField.Placeholder = 'lsr_ints_*.mat';
+
+            app.TransCoordsFileEditField.Value = app.pickLatestFile(appDir, 'TranslatedCoords_*.mat', app.TransCoordsFileEditField.Value);
+            %app.CalMtxFileEditField.Value = app.pickLatestFile(appDir, 'cal_mtx_*.mat', app.CalMtxFileEditField.Value);
+            %app.LaserIntensitiesFileEditField.Value = app.pickLatestFile(appDir, 'lsr_ints_*.mat', app.LaserIntensitiesFileEditField.Value);
+        end
+
+        % Value changed function: TransCoordsFileEditField
+        function TransCoordsFileEditFieldValueChanged(app, ~)
+            appDir = fileparts(mfilename('fullpath'));
+            [resolved, displayPath] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(resolved)
+                app.TransCoordsFileEditField.Value = "file does not exist!";
+            else
+                app.TransCoordsFileEditField.Value = displayPath;
+            end
+        end
+
+        function PreviewROIGUIButtonPushed(app, ~)
+            if app.StartExperimentButton.Value
+                errordlg('Stop the experiment before launching ROI preview.', 'Preview Unavailable');
+                return;
+            end
+            if ~isempty(app.previewFig)
+                try
+                    if ishghandle(app.previewFig)
+                        figure(app.previewFig);
+                        app.StartingupLabel.Text = 'Preview already open';
+                        return;
+                    end
+                catch
+                end
+            end
+            if ~isempty(app.previewVid)
+                try
+                    if isvalid(app.previewVid)
+                        app.StartingupLabel.Text = 'Preview already open';
+                        return;
+                    end
+                catch
+                end
+            end
+            if ~app.canLaunchPreview()
+                return;
+            end
+
+            app.PreviewROIGUIButton.Enable = 'off';
+            app.StartingupLabel.Text = 'Launching ROI preview...';
+            drawnow
+
+            try
+                app.startROIPreview();
+                app.StartingupLabel.Text = 'Idle';
+            catch ME
+                app.stopROIPreview();
+                app.StartingupLabel.Text = 'Idle';
+                errordlg(sprintf('ROI preview failed:\n%s', ME.message), 'Preview Error');
+            end
+            app.PreviewROIGUIButton.Enable = 'on';
+        end
+
+        function tf = canLaunchPreview(app)
+            tf = false;
+            appDir = fileparts(mfilename('fullpath'));
+            [transCoordsPath, transCoordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(transCoordsPath)
+                errordlg('Translated coordinates file is missing or invalid.', 'Preview Unavailable');
+                return;
+            end
+            app.TransCoordsFileEditField.Value = transCoordsDisplay;
+
+            tf = true;
+        end
+
+        function startROIPreview(app)
+            appDir = fileparts(mfilename('fullpath'));
+            [transCoordsPath, transCoordsDisplay] = app.resolveFileInput(appDir, app.TransCoordsFileEditField.Value);
+            if isempty(transCoordsPath)
+                error('Translated coordinates file is missing or invalid.');
+            end
+            app.TransCoordsFileEditField.Value = transCoordsDisplay;
+            data = load(transCoordsPath, 'translated_coords');
+            if ~isfield(data, 'translated_coords') || size(data.translated_coords, 2) < 3
+                error('Translated coordinates file must contain translated_coords(:,1:3).');
+            end
+            roiCircles = data.translated_coords(:, 1:3);
+            app.previewVid = videoinput("hamamatsu", 1, "MONO16_BIN2x2_1152x1152_Fast");
+            app.previewVid.ROIPosition = [0 160 576 238] * 2;
+
+            srcPreview = getselectedsource(app.previewVid);
+            srcPreview.OutputTriggerKindOpt3 = "exposure";
+            srcPreview.OutputTriggerPolarityOpt3 = "positive";
+            srcPreview.ExposureTime = 0.0125; %round(1 / app.FrameRate, 4);
+            disp('previewing vid')
+
+            app.previewVid.TriggerRepeat = 0;
+            app.previewVid.FramesPerTrigger = Inf;
+            triggerconfig(app.previewVid, 'immediate');
+            app.previewVid.LoggingMode = 'memory';
+
+            roi_attach_to_video(app.previewVid, roiCircles, struct( ...
+                'EnableLogging', false, ...
+                'PrintFPSPeriod', 2.0));
+
+            start(app.previewVid);
+            app.previewFig = roi_stream_gui(app.previewVid, struct('PlotWindowSec', 30, ...
+                'UpdatePeriod', 0.5, 'ImagePeriod', 0.25));
+            set(app.previewFig, 'CloseRequestFcn', @(src, evt)app.onPreviewFigureClose(src, evt));
+        end
+
+        function onPreviewFigureClose(app, src, ~)
+            if ~isempty(app.previewFig) && isequal(src, app.previewFig)
+                app.previewFig = [];
+            end
+            if nargin >= 2 && ishghandle(src)
+                try
+                    set(src, 'CloseRequestFcn', '');
+                    delete(src);
+                catch
+                end
+            end
+            app.stopROIPreview();
+        end
+
+        function stopROIPreview(app)
+            if ~isempty(app.previewFig)
+                try
+                    if ishghandle(app.previewFig)
+                        delete(app.previewFig);
+                    end
+                catch
+                end
+                app.previewFig = [];
+            end
+
+            if ~isempty(app.previewVid)
+                try
+                    if isvalid(app.previewVid)
+                        try
+                            stop(app.previewVid);
+                        catch
+                        end
+                        delete(app.previewVid);
+                    end
+                catch
+                end
+                app.previewVid = [];
+            end
+        end
+
+        function [outPath, displayPath] = resolveFileInput(app, appDir, inputPath)
+            p = char(inputPath);
+            if isfile(p)
+                outPath = p;
+                displayPath = app.localDisplayPath(appDir, outPath);
+                return;
+            end
+
+            p2 = fullfile(appDir, p);
+            if isfile(p2)
+                outPath = p2;
+                displayPath = app.localDisplayPath(appDir, outPath);
+                return;
+            end
+
+            outPath = '';
+            displayPath = '';
+        end
+
+        function displayPath = localDisplayPath(~, appDir, absOrRelPath)
+            p = char(absOrRelPath);
+            prefix = [char(appDir) filesep];
+            if startsWith(p, prefix)
+                displayPath = p(numel(prefix) + 1:end);
+            else
+                displayPath = p;
+            end
+        end
+
+
 
         % Code that executes before app deletion
         function delete(app)
