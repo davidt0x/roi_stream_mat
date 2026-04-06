@@ -85,11 +85,12 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                     end
                     app.v = [];
                 end
-                if exist(app.dqIn, 'var')
-                    delete(app.dqIn)
+                if ~isempty(app.dqIn)
+                    try
+                        delete(app.dqIn);
+                    catch
                 end
-                if exist(app.dqIn, 'var')
-                    delete(app.dqOut)
+                    app.dqIn = [];
                 end
                 
                 % Connect to camera

@@ -103,11 +103,19 @@ classdef ExperimentalGUI_TTLtrig_exported < matlab.apps.AppBase
                 end
                 app.v = [];
             end
-            if exist(app.dqIn, 'var')
-                delete(app.dqIn)
+            if ~isempty(app.dqIn)
+                try
+                    delete(app.dqIn);
+                catch
+                end
+                app.dqIn = [];
             end
-            if exist(app.dqIn, 'var')
-                delete(app.dqOut)
+            if ~isempty(app.dqOut)
+                try
+                    delete(app.dqOut);
+                catch
+                end
+                app.dqOut = [];
             end
 
             % Get laser parameters
