@@ -76,8 +76,14 @@ classdef ExperimentalGUI_TCNoStim_exported < matlab.apps.AppBase
                 app.FrameRate = 80; % Hz
                 
                 % Clear recording variables if they already exist
-                if exist(app.v, 'var')
-                    delete(app.v)
+                if ~isempty(app.v)
+                    try
+                        if isvalid(app.v)
+                            delete(app.v);
+                        end
+                    catch
+                    end
+                    app.v = [];
                 end
                 if exist(app.dqIn, 'var')
                     delete(app.dqIn)
